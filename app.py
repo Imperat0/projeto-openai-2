@@ -1,72 +1,50 @@
-from flask import Flask, render_template, request, Response
+from flask import Flask, render_template, request
 from openai import OpenAI
-from dotenv import load_dotenv
 import os
-from time import sleep
-from helpers import *
-from selecionar_persona import *
+from dotenv import load_dotenv
+from selecionar_documento import *
 
 load_dotenv()
+
+app = Flask(__name__)
 
 cliente = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 modelo = "gpt-4"
 
-app = Flask(__name__)
-app.secret_key = "alura"
 
-contexto = carrega("dados/ecomart.txt")
+@app.route("/", methods=["GET", "POST"])
+def index():
+    if request.method == "POST":
+        prompt = request.form["prompt"]
 
+        contexto = selecionar_contexto(prompt)
+        documento_selecionado = selecionar_documento(contexto)
 
-def bot(prompt):
-    maximo_tentativas = 1
-    repeticao = 0
-    personalidade = personas[selecionar_persona(prompt)]
-    while True:
-        try:
-            prompt_do_sistema = f"""
-            Você é um chatbot de atendimento a clientes de um e-commerce. 
-            Você não deve responder perguntas que não sejam dados do ecommerce informado!
-            Você deve gerar respostas utilizando o contexto abaixo.
-            Você deve adotar a persona abaixo.
-            
-            # Contexto
-            {contexto}
+        prompt_sistema = f"""
+        Você é a Luri, um chatbot especializado em tirar dúvidas sobre os produtos do EcoMart (um e-commerce focado em sustentabilidade).
 
-            # Persona
-            {personalidade}
-            """
-            response = cliente.chat.completions.create(
-                messages=[
-                    {"role": "system", "content": prompt_do_sistema},
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=1,
-                max_tokens=300,
-                top_p=1,
-                frequency_penalty=0,
-                presence_penalty=0,
-                model=modelo,
-            )
-            return response
-        except Exception as erro:
-            repeticao += 1
-            if repeticao >= maximo_tentativas:
-                return "Erro no GPT: %s" % erro
-            print("Erro de comunicação com OpenAI:", erro)
-            sleep(1)
+        # CONTEXTO
+        {documento_selecionado}
 
+        Siga as seguintes regras:
+        - Tom de voz: Amigável, gentil e divertido.
+        - Personalidade: Engraçada, extrovertida e um pouco "hippie".
+        - Formato: Use emojis e гіfѕ para deixar a conversa mais animada.
+        """
 
-@app.route("/chat", methods=["POST"])
-def chat():
-    prompt = request.json["msg"]
-    resposta = bot(prompt)
-    texto_resposta = resposta.choices[0].message.content
-    return texto_resposta
+        resposta = cliente.chat.completions.create(
+            model=modelo,
+            messages=[
+                {"role": "system", "content": prompt_sistema},
+                {"role": "user", "content": prompt},
+            ],
+        )
 
+        return render_template(
+            "index.html", resposta=resposta.choices[0].message.content
+        )
 
-@app.route("/")
-def home():
-    return render_template("index.html")
+    return render_template("index.html", resposta=None)
 
 
 if __name__ == "__main__":
